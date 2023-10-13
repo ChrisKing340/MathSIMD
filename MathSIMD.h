@@ -54,12 +54,8 @@ SOFTWARE.
 #error MathSIMD requires C++
 #endif
 
-#if defined(_MSC_VER) && (_MSC_VER < 1920)
-#error MathSIMD requires Visual C++ 2019 or later.
-#endif
-
 #define KING_MATH_VERSION_MAJOR 2
-#define KING_MATH_VERSION_MINOR 6
+#define KING_MATH_VERSION_MINOR 8
 #define KING_MATH_VERSION_PATCH 0
 
 /*
@@ -81,12 +77,12 @@ SOFTWARE.
     2017            
 
     Version 1.5.0   Quaterions introduced for better rotations of 3D points. This works really
-                    well, however, note that the errors in position was not gimbal lock which
+    not recorded    well, however, note that the errors in position was not gimbal lock which
                     had potential under euler math transforms, but rather floating point error.
                     Therefore, it is important to zero when near zero and not allow the error
                     to build up over time. Use operator bool() to check for angle present (tiny
                     angles are ignored to stop tiny transforms and further error introduction)
-                    rather than rotating my the Quaterion every frame
+                    rather than rotating by the Quaterion every frame
 
     Version 1.6.0   Added stream support
     2018
@@ -94,7 +90,7 @@ SOFTWARE.
     Version 2.0.0   Data parallelism accelerated code through SIMD (single instruction, 
     2019            multiple data) math library of DirectXMath (not dependent on DirectX)
                     for float2, float3, float4, and Quaternion. Type defines implemented to match
-                    HLSL terms
+                    HLSL naming convention
 
     Version 2.3.0   Added Json support using 3rd party code by nlohmann
     2019
@@ -118,6 +114,22 @@ SOFTWARE.
 
     Version 2.6.0   Separated the code from GeometryKing library as a stand alone static project.
     23JAN2023       Used by PhysicsKing which was also separated from GeometryKing as a static project.
+
+    Version 2.7.0   Added to float2 DotProduct(const FloatPoint2 vecIn), CrossProduct(const FloatPoint2 vecIn)
+    12JUL2023       and ProjectOnToVector(const FloatPoint2 vecIn) similar to float3 implementation.
+                    these were not used in original use of the library in 2D for GUI but now necessary
+                    as it is being used for 2D physic problem solving.
+
+    Version 2.7.1   Adjusted operator bool() and !bool() for float2, float3, float4 conversion to also check for infinite
+    22SEP2023       in addition to nan.
+
+    Version 2.8.0   Added test methods IsZero() and IsBelow(epsilon) to float2, float3, and float4.that retrun true 
+    01OCT2023       if exactly zero or within epsilon.
+                    Added methods Zero() and ZeroIfNearZero(epsilon) to float2, float3, and float4.which zero the vector 
+                    componets (if < epsilon).
+                    Added method float4::CrossProduct(...) 
+                    Added alias naming that some user preferences for Dot, Cross, Normailze that call methods DotProduct,
+                    CrossProduct, and MakeNormalize. float2, float3, and float4.
  */
 
 #include "..\json\single_include\nlohmann\json.hpp"
@@ -268,8 +280,8 @@ namespace King {
         inline void                             Set(const POINT & point) { u[0] = static_cast<unsigned int>(point.x); u[1] = static_cast<unsigned int>(point.y); }
         // Accessors
         unsigned int*                           GetPtr() { return reinterpret_cast<unsigned int*>(this); }
-        inline const unsigned long              GetX() const { return (unsigned long)u[0]; }
-        inline const unsigned long              GetY() const { return (unsigned long)u[1]; }
+        inline const auto&                      GetX() const { return u[0]; }
+        inline const auto&                      GetY() const { return u[1]; }
         // Functionality
         inline void                             Min(const UIntPoint2& in) { u[0] = u[0] < in.u[0] ? u[0] : in.u[0]; u[1] = u[1] < in.u[1] ? u[1] : in.u[1]; }
         inline void                             Max(const UIntPoint2& in) { u[0] = u[0] > in.u[0] ? u[0] : in.u[0]; u[1] = u[1] > in.u[1] ? u[1] : in.u[1]; }
@@ -355,7 +367,7 @@ namespace King {
         inline IntPoint2 operator-  (int s) const { return IntPoint2(i[0] - static_cast<long>(s), i[1] - static_cast<long>(s)); }
         inline IntPoint2 operator*  (int s) const { return IntPoint2(i[0] * static_cast<long>(s), i[1] * static_cast<long>(s)); }
         inline IntPoint2 operator/  (int s) const { return IntPoint2(i[0] / static_cast<long>(s), i[1] / static_cast<long>(s)); }
-
+        
         inline IntPoint2 operator+  (long s) const { return IntPoint2(i[0] + (s), i[1] + (s)); }
         inline IntPoint2 operator-  (long s) const { return IntPoint2(i[0] - (s), i[1] - (s)); }
         inline IntPoint2 operator*  (long s) const { return IntPoint2(i[0] * (s), i[1] * (s)); }
@@ -558,8 +570,8 @@ namespace King {
         inline FloatPoint2& operator= (const DirectX::XMVECTOR vecIn) noexcept { v = vecIn; return *this; } // copy assignment
         inline FloatPoint2& operator= (FloatPoint2 && in) noexcept { v = std::move(in.v); return *this; } // move
         // Conversions
-        inline explicit operator bool() const { return !DirectX::XMVector2IsNaN(v); } // valid
-        inline bool operator !() const { return DirectX::XMVector2IsNaN(v); } // invalid
+        inline explicit operator bool() const { return !DirectX::XMVector2IsNaN(v) && !DirectX::XMVector2IsInfinite(v); } // valid
+        inline bool operator !() const { return DirectX::XMVector2IsNaN(v) || DirectX::XMVector2IsInfinite(v); } // invalid
         inline operator DirectX::XMFLOAT2() const { return Get_XMFLOAT2(); }
         inline operator DirectX::XMFLOAT2A() const { return Get_XMFLOAT2A(); }
         inline operator DirectX::XMINT2() const { return Get_XMINT2(); }
@@ -610,21 +622,24 @@ namespace King {
         inline FloatPoint2 operator*= (const DirectX::XMMATRIX& m) { v = DirectX::XMVector2TransformNormal(v, m); return *this; } // without translation
         // Accessors
         float* GetPtr() { return reinterpret_cast<float*>(this); } // returns a float
+        unsigned char* GetBytePtr() { return reinterpret_cast<unsigned char*>(this); } // returns a char
         inline const DirectX::XMFLOAT2          Get_XMFLOAT2() const { DirectX::XMFLOAT2 rtn; DirectX::XMStoreFloat2(&rtn, v); return rtn; }
         inline const DirectX::XMFLOAT2A         Get_XMFLOAT2A() const { DirectX::XMFLOAT2A rtn; DirectX::XMStoreFloat2A(&rtn, v); return rtn; }
         inline const DirectX::XMINT2            Get_XMINT2() const { DirectX::XMINT2 rtn; rtn.x = static_cast<int>(f[0]); rtn.y = static_cast<int>(f[1]); return rtn; }
         inline const DirectX::XMUINT2           Get_XMUINT2() const { DirectX::XMUINT2 rtn; rtn.x = static_cast<unsigned int>(f[0]); rtn.y = static_cast<unsigned int>(f[1]); return rtn; }
-        inline const DirectX::XMVECTORF32       Get_XMVECTORF32() const { return static_cast<DirectX::XMVECTORF32>(*this); }
+        inline const DirectX::XMVECTORF32       Get_XMVECTORF32() const { return static_cast<const DirectX::XMVECTORF32>(*this); }
         inline const float                      GetX() const { return (float)DirectX::XMVectorGetX(v); }
         inline const float                      GetY() const { return (float)DirectX::XMVectorGetY(v); }
-        inline DirectX::XMVECTOR& GetVec() { return v; } // modifiable type
-        inline const DirectX::XMVECTOR& GetVecConst() const { return v; } // constant type
+        inline DirectX::XMVECTOR&               GetVec() { return v; } // modifiable type
+        inline const DirectX::XMVECTOR&         GetVecConst() const { return v; } // constant type
+
         float virtual                           GetMagnitude() const { return DirectX::XMVectorGetX(DirectX::XMVector2Length(v)); }
         float virtual                           GetMagnitudeEst() const { return DirectX::XMVectorGetX(DirectX::XMVector2LengthEst(v)); }
         // Assignments
         inline void __vectorcall                Set(FloatPoint2 in) noexcept { v = in.v; }
         inline void __vectorcall                Set(DirectX::XMVECTOR in) noexcept { v = in; }
         inline void                             SetZero(void) { v = DirectX::XMVectorZero(); }
+        inline void                             SetZeroIfNear(const float epsilon = 0.00005f) { auto mask = DirectX::XMVectorLess(DirectX::XMVectorAbs(v), DirectX::XMVectorReplicate(epsilon)); DirectX::XMVectorSelect(v, DirectX::XMVectorZero(), mask); }
         void                                    SetX(const float x) { v = DirectX::XMVectorSetX(v, x); }
         void                                    SetY(const float y) { v = DirectX::XMVectorSetY(v, y); }
         inline virtual void                     Set(const float xy) { v = DirectX::XMVectorSet(xy, xy, 0.f, 0.f); }
@@ -638,12 +653,17 @@ namespace King {
         inline void                             Set(const DirectX::XMFLOAT2 & point) { v = DirectX::XMLoadFloat2(&point); }
         inline void                             Set(const DirectX::XMUINT2 & point) { v = DirectX::XMLoadUInt2(&point); v = DirectX::XMConvertVectorUIntToFloat(v, 0); }
         inline void                             Set(const DirectX::XMINT2 & point) { v = DirectX::XMLoadSInt2(&point); v = DirectX::XMConvertVectorIntToFloat(v, 0); }
+        // Tests
+        bool                                    IsZero() const { return DirectX::XMVector2Equal(v, DirectX::g_XMZero); }
+        bool                                    IsZeroOrNearZero(const float epsilon = 0.00005f) const { return DirectX::XMVector2NearEqual(v, DirectX::XMVectorZero(), DirectX::XMVectorReplicate(epsilon)); }
         // Functionality
-        void                                    MakeAbsolute() { v = DirectX::XMVectorAbs(v); }
+        inline float __vectorcall               DotProduct(const FloatPoint2 vecIn) const { auto d = (float)DirectX::XMVectorGetX(DirectX::XMVector2Dot(v, vecIn)); assert(!isnan(d)); return d; } // order does not mater A•B = B•A
+        inline FloatPoint2 __vectorcall         CrossProduct(const FloatPoint2 vecIn) const { return FloatPoint2(DirectX::XMVector3Cross(v, vecIn)); } // order does matter AxB = -(BxA) // note: this is RHS used by DirectX (verified math on 3/5/2022 CHK)
+        FloatPoint2 __vectorcall                ProjectOnToVector(const FloatPoint2 vecIn) const { auto n = Normal(vecIn); if (DirectX::XMVector2IsNaN(n)) return float2(0.f); return n * DirectX::XMVector2Dot(v, n.GetVecConst()); }
+        inline virtual void                     Absolute() { v = DirectX::XMVectorAbs(v); }
+        inline virtual void                     Normalize() { v = DirectX::XMVector2Normalize(v); } // alternate naming (many prefer, future will depreciate one)
         inline virtual void                     MakeNormalize() { v = DirectX::XMVector2Normalize(v); }
-        //FloatPoint2 __vectorcall                ProjectOnToVector(const FloatPoint2 vecIn) const { auto n = Normalize(vecIn); return n * DirectX::XMVector2Dot(v, n.GetVecConst()); }
         // Statics
-        static FloatPoint2 __vectorcall         Absolute(const FloatPoint2 point2In) { return FloatPoint2(DirectX::XMVectorAbs(point2In)); }
         static FloatPoint2 __vectorcall         Normal(const FloatPoint2 point2In) { return FloatPoint2(DirectX::XMVector2Normalize(point2In)); }
         static const float __vectorcall         Magnitude(const FloatPoint2 point2In) { return DirectX::XMVectorGetX(DirectX::XMVector2Length(point2In)); }
         static const float __vectorcall         MagnitudeEst(const FloatPoint2 point2In) { return DirectX::XMVectorGetX(DirectX::XMVector2LengthEst(point2In)); }
@@ -692,8 +712,8 @@ namespace King {
         inline FloatPoint3& operator= (const DirectX::XMVECTOR & vecIn) noexcept { v = vecIn; return *this; }
         inline FloatPoint3& operator= (FloatPoint3 && in) noexcept { v = std::move(in.v); return *this; }
         // Conversions
-        inline explicit operator bool() const { return !DirectX::XMVector3IsNaN(v); } // valid
-        inline bool operator !() const { return DirectX::XMVector3IsNaN(v); } // invalid
+        inline explicit operator bool() const { return !DirectX::XMVector3IsNaN(v) && !DirectX::XMVector3IsInfinite(v); } // valid
+        inline bool operator !() const { return DirectX::XMVector3IsNaN(v) || DirectX::XMVector3IsInfinite(v); } // invalid
         inline operator FloatPoint2() const { return FloatPoint2(v); }
         inline operator DirectX::XMFLOAT3() const { return Get_XMFLOAT3(); }
         inline operator DirectX::XMFLOAT3A() const { return Get_XMFLOAT3A(); }
@@ -757,13 +777,20 @@ namespace King {
         inline void                             Set(const DirectX::XMFLOAT3 & point) { v = DirectX::XMLoadFloat3(&point); }
         inline void                             Set(const DirectX::XMUINT3 & point) { v = DirectX::XMLoadUInt3(&point); v = DirectX::XMConvertVectorUIntToFloat(v, 0); }
         inline void                             Set(const DirectX::XMINT3 & point) { v = DirectX::XMLoadSInt3(&point); v = DirectX::XMConvertVectorIntToFloat(v, 0); }
+        // Tests
+        // Tests
+        bool                                    IsZero() const { return DirectX::XMVector2Equal(v, DirectX::g_XMZero); }
+        bool                                    IsOrNearZero(const float epsilon = 0.00005f) const { return DirectX::XMVector3NearEqual(v, DirectX::XMVectorZero(), DirectX::XMVectorReplicate(epsilon)); }
         // Functionality
-        inline virtual void                     MakeNormalize() { v = DirectX::XMVector3Normalize(v); }
-        float __vectorcall                      DotProduct(const FloatPoint3 vecIn) const { auto d = (float)DirectX::XMVectorGetX(DirectX::XMVector3Dot(v, vecIn)); assert(!isnan(d)); return d; } // order does not mater A•B = B•A
-        FloatPoint3 __vectorcall                CrossProduct(const FloatPoint3 vecIn) const { return FloatPoint3(DirectX::XMVector3Cross(v, vecIn)); } // order does matter AxB = -(BxA) // note: this is RHS used by DirectX (verified math on 3/5/2022 CHK)
+        inline float __vectorcall               DotProduct(const FloatPoint3 vecIn) const { auto d = (float)DirectX::XMVectorGetX(DirectX::XMVector3Dot(v, vecIn)); assert(!isnan(d)); return d; } // order does not mater A•B = B•A
+        inline FloatPoint3 __vectorcall         CrossProduct(const FloatPoint3 vecIn) const { return FloatPoint3(DirectX::XMVector3Cross(v, vecIn)); } // order does matter AxB = -(BxA) // note: this is RHS used by DirectX (verified math on 3/5/2022 CHK)
         FloatPoint3 __vectorcall                ProjectOnToVector(const FloatPoint3 vecIn) const { auto n = Normal(vecIn); if (DirectX::XMVector3IsNaN(n)) return float3(0.f); return n * DirectX::XMVector3Dot(v, n.GetVecConst()); }
+        inline void                             Zero() { v = DirectX::g_XMZero; }
+        inline virtual void                     Absolute() { v = DirectX::XMVectorAbs(v); }
+        inline virtual void                     Normalize() { v = DirectX::XMVector3Normalize(v); } // alternate naming (many prefer, future will depreciate one)
+        inline virtual void                     MakeNormalize() { v = DirectX::XMVector3Normalize(v); }
+
         // Statics
-        static FloatPoint3 __vectorcall         Absolute(const FloatPoint3 point3In) { return FloatPoint3(DirectX::XMVectorAbs(point3In.GetVecConst())); }
         static FloatPoint3 __vectorcall         Normal(const FloatPoint3 point3In) { return FloatPoint3(DirectX::XMVector3Normalize(point3In.GetVecConst())); }
         static const float __vectorcall         Magnitude(const FloatPoint3 point3In) { return DirectX::XMVectorGetX(DirectX::XMVector3Length(point3In.GetVecConst())); }
         static const float __vectorcall         MagnitudeEst(const FloatPoint3 point3In) { return DirectX::XMVectorGetX(DirectX::XMVector3LengthEst(point3In.GetVecConst())); }
@@ -814,8 +841,8 @@ namespace King {
         inline FloatPoint4& operator= (const DirectX::XMVECTOR & vecIn) noexcept { v = vecIn; return *this; }
         inline FloatPoint4& operator= (FloatPoint4&& in) noexcept { v = std::move(in.v); return *this; } // move assignment
         // Conversions
-        inline explicit operator bool() const { return !DirectX::XMVector4IsNaN(v); } // valid
-        inline bool operator !() const { return DirectX::XMVector4IsNaN(v); } // invalid
+        inline explicit operator bool() const { return !DirectX::XMVector4IsNaN(v) && !DirectX::XMVector4IsInfinite(v); } // valid 
+        inline bool operator !() const { return DirectX::XMVector4IsNaN(v) || DirectX::XMVector4IsInfinite(v); } // invalid
         inline operator FloatPoint2() const { return FloatPoint2(v); }
         inline operator FloatPoint3() const { return FloatPoint3(v); }
         inline operator DirectX::XMFLOAT2() const { return Get_XMFLOAT2(); }
@@ -866,7 +893,7 @@ namespace King {
         inline const DirectX::XMFLOAT4          Get_XMFLOAT4() const { DirectX::XMFLOAT4 rtn; DirectX::XMStoreFloat4(&rtn, v); return rtn; }
         inline const DirectX::XMFLOAT4A         Get_XMFLOAT4A() const { DirectX::XMFLOAT4A rtn; DirectX::XMStoreFloat4A(&rtn, v); return rtn; }
         inline const float                      GetW() const { return (float)DirectX::XMVectorGetW(v); }
-        float virtual                           GetMagnitude() { return DirectX::XMVectorGetX(DirectX::XMVector4Length(v)); }
+        float virtual                           GetMagnitude() const { return DirectX::XMVectorGetX(DirectX::XMVector4Length(v)); }
         // Assignments
         inline virtual void                     SetW(const float w) { v = DirectX::XMVectorSetW(v, w); }
 
@@ -883,12 +910,18 @@ namespace King {
         inline void                             Set(const DirectX::XMFLOAT4 & point) { v = DirectX::XMLoadFloat4(&point); }
         inline void                             Set(const DirectX::XMUINT4 & point) { v = DirectX::XMLoadUInt4(&point); v = DirectX::XMConvertVectorUIntToFloat(v, 0); }
         inline void                             Set(const DirectX::XMINT4 & point) { v = DirectX::XMLoadSInt4(&point); v = DirectX::XMConvertVectorIntToFloat(v, 0); }
+        // Tests
+        bool                                    IsZero() const { return DirectX::XMVector2Equal(v, DirectX::g_XMZero); }
+        bool                                    IsOrNearZero(const float epsilon = 0.00005f) const { return DirectX::XMVector4NearEqual(v, DirectX::XMVectorZero(), DirectX::XMVectorReplicate(epsilon)); }
         // Functionality
+        inline float __vectorcall               DotProduct(const FloatPoint4 vecIn) const { auto d = (float)DirectX::XMVectorGetX(DirectX::XMVector4Dot(v, vecIn)); assert(!isnan(d)); return d; } // order does not mater A•B = B•A
+        inline FloatPoint4 __vectorcall         CrossProduct(const FloatPoint4 vec1In, const FloatPoint4 vec2In) const { return FloatPoint4(DirectX::XMVector4Cross(v, vec1In, vec2In)); } // order does matter AxB = -(BxA) // note: this is RHS used by DirectX (verified math on 3/5/2022 CHK)
+        FloatPoint4 __vectorcall                ProjectOnToVector(const FloatPoint4 vecIn) const { auto n = Normal(vecIn); if (DirectX::XMVector4IsNaN(n)) return float4(0.f); return n * DirectX::XMVector4Dot(v, n.GetVecConst()); }
+        inline void                             Zero() { v = DirectX::g_XMZero; }
+        inline virtual void                     Absolute() { v = DirectX::XMVectorAbs(v); }
+        inline virtual void                     Normalize() { v = DirectX::XMVector4Normalize(v); } // alternate naming (many prefer, future will depreciate one)
         inline virtual void                     MakeNormalize() { v = DirectX::XMVector4Normalize(v); }
-        float __vectorcall                      DotProduct(const FloatPoint4 vecIn) { return (float)DirectX::XMVectorGetX(DirectX::XMVector4Dot(v, vecIn)); } // order does not mater A•B = B•A
-        //FloatPoint4 __vectorcall                ProjectOnToVector(const FloatPoint4 vecIn) const { auto n = Normalize(vecIn); return n * DirectX::XMVector4Dot(v, n.GetVecConst()); }
         // Statics
-        static FloatPoint4 __vectorcall         Absolute(const FloatPoint4 point4In) { return FloatPoint4(DirectX::XMVectorAbs(point4In.GetVecConst())); }
         static FloatPoint4 __vectorcall         Normal(const FloatPoint4 point4In) { return FloatPoint4(DirectX::XMVector4Normalize(point4In.GetVecConst())); }
         static const float __vectorcall         Magnitude(const FloatPoint4 point4In) { return DirectX::XMVectorGetX(DirectX::XMVector4Length(point4In.GetVecConst())); }
         static FloatPoint4 __vectorcall         DotProduct(const FloatPoint4 vec1In, const FloatPoint4 & vec2In) { return DirectX::XMVector4Dot(vec1In, vec2In); } // order does not mater A•B = B•A
