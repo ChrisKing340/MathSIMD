@@ -10,16 +10,15 @@ json visit: https://github.com/nlohmann/json
 This code is the foundation of a fully functional DirectX 12 game engine and physics simulator.
 
 ## Classes
-    Unique identifiers aliased to your liking, produced is for HLSL code style of float3, int4, etc.
-    The following accelerated classes are defined in the namespace King:
+    Accelerated four basic data types for floating point operations on multiple data within the King namespace. Three other non-accelerated data type for ints are provided for completeness and historically is where this library had its roots (developer convirnence for multiple data pairs in user interfaces)
     
     #include "MathSIMD\MathSIMD.h"
-
-    class FloatPoint2; // SIMD
-    class FloatPoint3; // SIMD
-    class FloatPoint4; // SIMD
-    class Quaternion; // SIMD
-
-    class UIntPoint2; // not accelerated
-    class IntPoint2; // not accelerated
-    class IntPoint3; // not accelerated
+    // SIMD
+    class float2; 
+    class foat3;
+    class float4;
+    class Quaternion;
+    // not accelerated
+    class uint2;
+    class int2;
+    class int3;
