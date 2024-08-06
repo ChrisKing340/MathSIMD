@@ -18,6 +18,10 @@ Description:    Multiple data set variable types defined to simplify code for
                 although alignment allocations are made to be backwards compatible
                 on 32 bit operating systems.
 
+                Version 2.9.0 added the SystemInfo class to report system capabilites
+                and compatabilies of intrinsics (although all modern systems support
+                at some level, so this is a reporting only function and not conditional)
+
 Contact:        ChrisKing340@gmail.com
 
 References:     https://msdn.microsoft.com/en-us/library/windows/desktop/hh437833(v=vs.85).aspx
@@ -44,7 +48,6 @@ LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%*/
-
 #pragma once
 #ifndef _ENABLE_EXTENDED_ALIGNED_STORAGE
 #define _ENABLE_EXTENDED_ALIGNED_STORAGE
@@ -55,7 +58,7 @@ SOFTWARE.
 #endif
 
 #define KING_MATH_VERSION_MAJOR 2
-#define KING_MATH_VERSION_MINOR 8
+#define KING_MATH_VERSION_MINOR 9
 #define KING_MATH_VERSION_PATCH 0
 
 /*
@@ -114,6 +117,10 @@ SOFTWARE.
 
     Version 2.6.0   Separated the code from GeometryKing library as a stand alone static project.
     23JAN2023       Used by PhysicsKing which was also separated from GeometryKing as a static project.
+                    Intended to allow use in a variety of new projects without the main reason it was 
+                    created for (Geometry2D UI and later Geometry3D models. CPU side acceleration was
+                    implemented later as the code base needed optimization and obviously this is good
+                    practice for all types of math instructions that have multiple data)
 
     Version 2.7.0   Added to float2 DotProduct(const FloatPoint2 vecIn), CrossProduct(const FloatPoint2 vecIn)
     12JUL2023       and ProjectOnToVector(const FloatPoint2 vecIn) similar to float3 implementation.
@@ -128,8 +135,16 @@ SOFTWARE.
                     Added methods Zero() and ZeroIfNearZero(epsilon) to float2, float3, and float4.which zero the vector 
                     componets (if < epsilon).
                     Added method float4::CrossProduct(...) 
-                    Added alias naming that some user preferences for Dot, Cross, Normailze that call methods DotProduct,
-                    CrossProduct, and MakeNormalize. float2, float3, and float4.
+                    
+    Version 2.9.0   Added class SystemInfo to report to cout the cpu, graphics card, and installed system memory
+    27NOV2023       Modified the new() and delete() methods for UIntPoint2, IntPoint2, and IntPoint3 for
+                    multiple compiler use. Also added additional constexpr constructors and Set(...) method definitions
+                    to all for compile time use in macros and templates (use case for UI in code templates)
+ 
+    PROPOSED Version 3 candidate:
+                    Breaking change: Remove typedef and replace base class names with adopted names that are typed defined
+                    Alternate 1: reverse the typedef not to break code bases
+ 
  */
 
 #include "..\json\single_include\nlohmann\json.hpp"
@@ -143,9 +158,11 @@ using json = nlohmann::json;
 #include <emmintrin.h> 
 #include <ostream>
 #include <istream>
+#include <iostream>
 #include <iomanip>
 #include <sal.h>
 #include <cstdlib>
+#include <cmath>
 
 namespace King {
     // Our data types defined:
@@ -157,9 +174,9 @@ namespace King {
     class FloatPoint2; // SIMD
     class FloatPoint3; // SIMD
     class FloatPoint4; // SIMD
-    class Quaternion; // SIMD // not so simple, but necessary for accurate rotations over large time periods
+    class Quaternion; // SIMD // not so simple, but necessary for accurate rotations over multiple incremental multiplications (gimbal lock and floating point error accumulation reduced)
 
-
+    // *** TO DO *** base names will be depreciated in the future for the typedef listed here
     // Use of tpyedef let you change it to your liking.  If you intend to use my King game engine, my King physics, 
     // or my Geometry King code then do not change these. Feel free to add your own typedef
     typedef UIntPoint2      uint2;
@@ -190,12 +207,13 @@ namespace King {
         /* methods */
     public:
         // Creation/Life cycle
-        //  *** TO DO *** Future
-        //   replace _aligned_malloc / _aligned_free with aligned_alloc / free for C++17 conformant included in 
-        //   cstdlib after Visual C 19 compiler is upgraded.  As of 12/20/2020 v16.8.2, still not conformant.
-        void* operator new (std::size_t size) noexcept(false) { auto ptr = _aligned_malloc(size, 16); if (!ptr) throw std::bad_alloc(); return ptr; }
-        void  operator delete (void* p) noexcept { _aligned_free(static_cast<UIntPoint2*>(p)); }
-
+#if defined(_MSC_VER)
+        void* operator new (std::size_t size) noexcept(false) { auto ptr = ::operator new(size, std::align_val_t{ 16 }); if (!ptr) throw std::bad_alloc(); return ptr; }
+        void  operator delete (void* p) noexcept { ::operator delete(p, std::align_val_t{ 16 }); }
+#elif defined(__GNUC__) || defined(__clang__)
+        void* operator new(std::size_t size) noexcept(false) { void* ptr; if (posix_memalign(&ptr, 16, size) != 0) { throw std::bad_alloc(); } return ptr; }
+        void operator delete(void* p) noexcept { free(p); }
+#endif
         inline UIntPoint2() { SetZero(); }
         inline UIntPoint2(const unsigned long& xy) { Set(xy); }
         inline UIntPoint2(const long& xy) { Set(xy); }
@@ -282,11 +300,13 @@ namespace King {
         unsigned int*                           GetPtr() { return reinterpret_cast<unsigned int*>(this); }
         inline const auto&                      GetX() const { return u[0]; }
         inline const auto&                      GetY() const { return u[1]; }
+
+        inline auto                             GetMagnitude() const { return (UINT)sqrt((u[0] * u[0]) + (u[1] * u[1])); }
         // Functionality
         inline void                             Min(const UIntPoint2& in) { u[0] = u[0] < in.u[0] ? u[0] : in.u[0]; u[1] = u[1] < in.u[1] ? u[1] : in.u[1]; }
         inline void                             Max(const UIntPoint2& in) { u[0] = u[0] > in.u[0] ? u[0] : in.u[0]; u[1] = u[1] > in.u[1] ? u[1] : in.u[1]; }
         //Statics
-        static const float                      Magnitude(const UIntPoint2& pIn) { return (float)std::sqrt(pIn.u[0] * pIn.u[0] + pIn.u[1] * pIn.u[1]); }
+        static const float                      Magnitude(const UIntPoint2& pIn) { return static_cast<float>(std::sqrt(pIn.u[0] * pIn.u[0] + pIn.u[1] * pIn.u[1])); }
     };
     /******************************************************************************
     *   IntPoint2
@@ -305,16 +325,20 @@ namespace King {
         /* methods */
     public:
         // Creation/Life cycle
-        void* operator new (std::size_t size) noexcept(false) { auto ptr = _aligned_malloc(size, 16); if (!ptr) throw std::bad_alloc(); return ptr; }
-        void  operator delete (void* p) noexcept { _aligned_free(static_cast<IntPoint2*>(p)); }
-
+#if defined(_MSC_VER)
+        void* operator new (std::size_t size) noexcept(false) { auto ptr = ::operator new(size, std::align_val_t{ 16 }); if (!ptr) throw std::bad_alloc(); return ptr; }
+        void  operator delete (void* p) noexcept { ::operator delete(p, std::align_val_t{ 16 }); }
+#elif defined(__GNUC__) || defined(__clang__)
+        void* operator new(std::size_t size) noexcept(false) { void* ptr; if (posix_memalign(&ptr, 16, size) != 0) { throw std::bad_alloc(); } return ptr; }
+        void operator delete(void* p) noexcept { free(p); }
+#endif
         inline constexpr IntPoint2() {}
-        inline IntPoint2(const long xy) { Set(xy); }
-        inline IntPoint2(const long x, const long y) { Set(x, y); }
-        inline IntPoint2(const int x, const int y) { Set(x, y); }
-        inline IntPoint2(const unsigned int x, const unsigned int y) { Set(x, y); }
-        inline IntPoint2(const float x, const float y) { Set(x, y); }
-        inline IntPoint2(const unsigned long x, const unsigned long y) { Set(x, y); }
+        inline constexpr IntPoint2(const long xy) { Set(xy); }
+        inline constexpr IntPoint2(const long x, const long y) { Set(x, y); }
+        inline constexpr IntPoint2(const int x, const int y) { Set(x, y); }
+        inline constexpr IntPoint2(const unsigned int x, const unsigned int y) { Set(x, y); }
+        inline constexpr IntPoint2(const float x, const float y) { Set(x, y); }
+        inline constexpr IntPoint2(const unsigned long x, const unsigned long y) { Set(x, y); }
         inline IntPoint2(const IntPoint2 & in) = default; // copy
         inline IntPoint2(const UIntPoint2 & in) { Set(in); }
         inline IntPoint2(const FloatPoint2 & in);
@@ -385,15 +409,15 @@ namespace King {
 
         // Assignments
         inline void constexpr                   SetZero(void) { i[0] = i[1] = 0; }
-        inline void                             SetX(const long x) { i[0] = static_cast<int>(x); }
-        inline void                             SetY(const long y) { i[1] = static_cast<int>(y); }
-        inline void                             Set(const long xy) { i[0] = i[1] = static_cast<int>(xy); }
-        inline void                             Set(const float xy) { i[0] = i[1] = static_cast<int>(xy); }
-        inline void                             Set(const long x, const long y) { i[0] = x; i[1] = y; }
-        inline void                             Set(const int x, const int y) { i[0] = x; i[1] = y; }
-        inline void                             Set(const unsigned int x, const unsigned int y) { i[0] = static_cast<int>(x); i[1] = static_cast<int>(y); }
-        inline void                             Set(const float x, const float y) { i[0] = static_cast<int>(x); i[1] = static_cast<int>(y); }
-        inline void                             Set(const unsigned long x, const unsigned long y) { i[0] = static_cast<int>(x); i[1] = static_cast<int>(y); }
+        inline void constexpr                   SetX(const long x) { i[0] = static_cast<int>(x); }
+        inline void constexpr                   SetY(const long y) { i[1] = static_cast<int>(y); }
+        inline void constexpr                   Set(const long xy) { i[0] = i[1] = static_cast<int>(xy); }
+        inline void constexpr                   Set(const float xy) { i[0] = i[1] = static_cast<int>(xy); }
+        inline void constexpr                   Set(const long x, const long y) { i[0] = x; i[1] = y; }
+        inline void constexpr                   Set(const int x, const int y) { i[0] = x; i[1] = y; }
+        inline void constexpr                   Set(const unsigned int x, const unsigned int y) { i[0] = static_cast<int>(x); i[1] = static_cast<int>(y); }
+        inline void constexpr                   Set(const float x, const float y) { i[0] = static_cast<int>(x); i[1] = static_cast<int>(y); }
+        inline void constexpr                   Set(const unsigned long x, const unsigned long y) { i[0] = static_cast<int>(x); i[1] = static_cast<int>(y); }
         inline void                             Set(const IntPoint2 & in) { *this = in; }
         inline void                             Set(const UIntPoint2 & in) { i[0] = static_cast<int>(in.GetX()); i[1] = static_cast<int>(in.GetY()); }
         inline void                             Set(const DirectX::XMINT2 & point) { i[0] = point.x; i[1] = point.y; }
@@ -426,16 +450,20 @@ namespace King {
         /* methods */
     public:
         // Creation/Life cycle
-        void* operator new (std::size_t size) noexcept(false) { auto ptr = _aligned_malloc(size, 16); if (!ptr) throw std::bad_alloc(); return ptr; }
-        void  operator delete (void* p) noexcept { _aligned_free(static_cast<IntPoint3*>(p)); }
-
+#if defined(_MSC_VER)
+        void* operator new (std::size_t size) noexcept(false) { auto ptr = ::operator new(size, std::align_val_t{ 16 }); if (!ptr) throw std::bad_alloc(); return ptr; }
+        void  operator delete (void* p) noexcept { ::operator delete(p, std::align_val_t{ 16 }); }
+#elif defined(__GNUC__) || defined(__clang__)
+        void* operator new(std::size_t size) noexcept(false) { void* ptr; if (posix_memalign(&ptr, 16, size) != 0) { throw std::bad_alloc(); } return ptr; }
+        void operator delete(void* p) noexcept { free(p); }
+#endif
         inline constexpr IntPoint3() {}
-        inline IntPoint3(const long xyz) { Set(xyz); }
-        inline IntPoint3(const long x, const long y, const long z) { Set(x, y, z); }
-        inline IntPoint3(const int x, const int y, const int z) { Set(x, y, z); }
-        inline IntPoint3(const unsigned int x, const unsigned int y, const unsigned int z) { Set(x, y, z); }
-        inline IntPoint3(const float x, const float y, const float z) { Set(x, y, z); }
-        inline IntPoint3(const unsigned long x, const unsigned long y, const unsigned long z) { Set(x, y, z); }
+        inline constexpr IntPoint3(const long xyz) { Set(xyz); }
+        inline constexpr IntPoint3(const long x, const long y, const long z) { Set(x, y, z); }
+        inline constexpr IntPoint3(const int x, const int y, const int z) { Set(x, y, z); }
+        inline constexpr IntPoint3(const unsigned int x, const unsigned int y, const unsigned int z) { Set(x, y, z); }
+        inline constexpr IntPoint3(const float x, const float y, const float z) { Set(x, y, z); }
+        inline constexpr IntPoint3(const unsigned long x, const unsigned long y, const unsigned long z) { Set(x, y, z); }
         inline IntPoint3(const IntPoint3 & in) = default; // copy
         inline IntPoint3(const FloatPoint3 & in);
         inline IntPoint3(const DirectX::XMINT3 & in) { Set(in); }
@@ -502,16 +530,16 @@ namespace King {
         inline IntPoint3& operator/= (const float s) { i[0] = static_cast<int>(static_cast<float>(i[0]) / s); i[1] = static_cast<int>(static_cast<float>(i[1]) / s); i[2] = static_cast<int>(static_cast<float>(i[2]) / s); return *this; }
         // Assignments
         inline void constexpr                   SetZero(void) { i[0] = i[1] = i[2] = 0; }
-        inline void                             SetX(const long x) { i[0] = static_cast<int>(x); }
-        inline void                             SetY(const long y) { i[1] = static_cast<int>(y); }
-        inline void                             SetZ(const long z) { i[2] = static_cast<int>(z); }
-        inline void                             Set(const long xyz) { i[0] = i[1] = i[2] = static_cast<int>(xyz); }
-        inline void                             Set(const float xyz) { i[0] = i[1] = i[2] = static_cast<int>(xyz); }
-        inline void                             Set(const long x, const long y, const long z) { i[0] = static_cast<int>(x); i[1] = static_cast<int>(y); i[2] = static_cast<int>(z); }
-        inline void                             Set(const int x, const int y, const int z) { i[0] = x; i[1] = y; i[2] = z; }
-        inline void                             Set(const unsigned int x, const unsigned int y, const unsigned int z) { i[0] = static_cast<int>(x); i[1] = static_cast<int>(y); i[2] = static_cast<int>(z); }
-        inline void                             Set(const float x, const float y, const float z) { i[0] = static_cast<int>(x); i[1] = static_cast<int>(y); i[2] = static_cast<int>(z); }
-        inline void                             Set(const unsigned long x, const unsigned long y, const unsigned long z) { i[0] = static_cast<int>(x); i[1] = static_cast<int>(y); i[2] = static_cast<int>(z); }
+        inline void constexpr                   SetX(const long x) { i[0] = static_cast<int>(x); }
+        inline void constexpr                   SetY(const long y) { i[1] = static_cast<int>(y); }
+        inline void constexpr                   SetZ(const long z) { i[2] = static_cast<int>(z); }
+        inline void constexpr                   Set(const long xyz) { i[0] = i[1] = i[2] = static_cast<int>(xyz); }
+        inline void constexpr                   Set(const float xyz) { i[0] = i[1] = i[2] = static_cast<int>(xyz); }
+        inline void constexpr                   Set(const long x, const long y, const long z) { i[0] = static_cast<int>(x); i[1] = static_cast<int>(y); i[2] = static_cast<int>(z); }
+        inline void constexpr                   Set(const int x, const int y, const int z) { i[0] = x; i[1] = y; i[2] = z; }
+        inline void constexpr                   Set(const unsigned int x, const unsigned int y, const unsigned int z) { i[0] = static_cast<int>(x); i[1] = static_cast<int>(y); i[2] = static_cast<int>(z); }
+        inline void constexpr                   Set(const float x, const float y, const float z) { i[0] = static_cast<int>(x); i[1] = static_cast<int>(y); i[2] = static_cast<int>(z); }
+        inline void constexpr                   Set(const unsigned long x, const unsigned long y, const unsigned long z) { i[0] = static_cast<int>(x); i[1] = static_cast<int>(y); i[2] = static_cast<int>(z); }
         inline void                             Set(const IntPoint3 & in) { *this = in; }
         inline void                             Set(const DirectX::XMINT3 & point) { i[0] = point.x; i[1] = point.y; i[2] = point.z; }
         // Accessors
@@ -1074,11 +1102,11 @@ namespace King {
             Random(min.GetZ(), max.GetZ()));
         return res;
     }
-    inline float Clamp(float v, float min, float max)
+    inline float Clamp(const float &v, const float &min, const float &max)
     {
         float res = v;
         res = v > max ? max : v;
-        res = v < min ? min : v;
+        res = res < min ? min : res;
         return res;
     };
 #define MAKE_SIMD_FUNCS( Type ) \
@@ -1171,4 +1199,140 @@ namespace King {
     void from_json(const json& j, FloatPoint3& to);
     void from_json(const json& j, FloatPoint4& to);
     void from_json(const json& j, Quaternion& to);
-}
+
+
+    /******************************************************************************
+    *   SystemInfo
+    *       Class for identifying the CPU and capabilities of the system
+    *
+    ******************************************************************************/
+    class SystemInfo 
+    {
+    public:
+        inline void GetSystemInfoToCout();
+    private:
+        inline void GetCPUInfoToCout();
+        inline void GetInstalledMemoryToCout();
+        inline void GetGraphicsCardInfoToCout();
+    };
+
+    inline void SystemInfo::GetSystemInfoToCout() { GetCPUInfoToCout(); GetInstalledMemoryToCout(); GetGraphicsCardInfoToCout(); }
+
+#if defined(__GNUC__) || defined(__clang__)
+    // For GCC and Clang
+    inline void GetCPUInfoToCout() {
+        unsigned int eax, ebx, ecx, edx;
+        __asm__ __volatile__("cpuid"
+            : "=a"(eax), "=b"(ebx), "=c"(ecx), "=d"(edx)
+            : "a"(1), "c"(0));
+
+        // Check CPU capabilities based on the values in eax, ebx, ecx, and edx
+        // Interpret the values as needed for your application
+        std::cout << "CPU capabilities for GCC/Clang:\n"
+            << "EAX: " << eax << "\n"
+            << "EBX: " << ebx << "\n"
+            << "ECX: " << ecx << "\n"
+            << "EDX: " << edx << "\n";
+    }
+#elif defined(_MSC_VER)
+    // For Visual Studio
+#include <intrin.h>
+    inline void GetCPUInfoToCout() {
+        int info[4];
+        __cpuid(info, 1);
+
+        // Check CPU capabilities based on the values in info
+        // Interpret the values as needed for your application
+        std::cout << "CPU capabilities for Visual Studio:\n"
+            << "EAX: " << info[0] << "\n"
+            << "EBX: " << info[1] << "\n"
+            << "ECX: " << info[2] << "\n"
+            << "EDX: " << info[3] << "\n";
+    }
+#else
+    inline void GetCPUInfo() {
+        std::cout << "CPU capabilities not supported for this compiler\n";
+    }
+#endif
+
+#if defined(_WIN32) || defined(_WIN64)
+    // For Windows
+    inline void SystemInfo::GetInstalledMemoryToCout() {
+        // Windows-specific installed memory retrieval (e.g., using Windows API)
+        MEMORYSTATUSEX memoryStatus;
+        memoryStatus.dwLength = sizeof(memoryStatus);
+
+        if (GlobalMemoryStatusEx(&memoryStatus))
+            std::cout << "Total Installed Memory (Windows): " << memoryStatus.ullTotalPhys / 1024 / 1024 << " MB\n";
+        else
+            std::cout << "Unable to retrieve installed memory information on Windows\n";
+    }
+    inline void SystemInfo::GetGraphicsCardInfoToCout() {
+        // Windows-specific graphics card info retrieval (e.g., using Windows API)
+        DISPLAY_DEVICE displayDevice;
+        displayDevice.cb = sizeof(DISPLAY_DEVICE);
+
+        if (EnumDisplayDevices(nullptr, 0, &displayDevice, 0))
+            std::cout << "Graphics Card Name (Windows): " << displayDevice.DeviceString << "\n";
+        else
+            std::cout << "Unable to retrieve graphics card information on Windows\n";
+    }
+
+#elif defined(__linux__)
+    // For Linux
+#include <fstream>
+#include <sstream>
+    inline void SystemInfo::GetInstalledMemoryToCout() {
+        // Linux-specific installed memory retrieval (e.g., reading /proc/meminfo)
+        std::ifstream meminfo("/proc/meminfo");
+        std::string line;
+
+        while (std::getline(meminfo, line)) {
+            std::istringstream iss(line);
+            std::string token, value;
+
+            if (iss >> token >> value && token == "MemTotal:") {
+                // Total installed memory is in kilobytes
+                std::cout << "Total Installed Memory (Linux): " << value / 1024 << " MB\n";
+                break;
+            }
+        }
+
+        meminfo.close();
+    }
+    inline void SystemInfo::GetGraphicsCardInfoToCout() {
+        // Linux-specific graphics card info retrieval (e.g., parsing lspci)
+        std::ifstream lspci("/usr/sbin/lspci -v");
+
+        if (lspci.is_open()) {
+            std::string line;
+
+            while (std::getline(lspci, line)) {
+                // Look for lines containing "VGA" to identify the graphics card
+                if (line.find("VGA") != std::string::npos) {
+                    std::cout << "Graphics Card Name (Linux): " << line << "\n";
+                    break;
+                }
+            }
+
+            lspci.close();
+        }
+        else {
+            std::cout << "Unable to retrieve graphics card information on Linux\n";
+        }
+    }
+
+#else
+    // Default case for unsupported platforms
+    inline void SystemInfo::GetCPUInfoToCout() {
+        std::cout << "CPU information not supported for this platform\n";
+    }
+    inline void SystemInfo::GetInstalledMemoryToCout() {
+        std::cout << "Installed memory information not supported for this platform\n";
+    }
+    inline void SystemInfo::GetGraphicsCardInfoToCout() {
+        std::cout << "Graphics card information not supported for this platform\n";
+    }
+#endif
+
+} // Kind namespace
