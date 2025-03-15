@@ -296,6 +296,8 @@ namespace King {
         inline void                             Set(const UIntPoint2 & in) { *this = in; }
         inline void                             Set(const DirectX::XMUINT2 & point) { u[0] = point.x; u[1] = point.y; }
         inline void                             Set(const POINT & point) { u[0] = static_cast<unsigned int>(point.x); u[1] = static_cast<unsigned int>(point.y); }
+        // Tests
+        bool                                    IsZero() const { return (u[0] == 0u && u[1] == 0u); }
         // Accessors
         unsigned int*                           GetPtr() { return reinterpret_cast<unsigned int*>(this); }
         inline const auto&                      GetX() const { return u[0]; }
@@ -422,6 +424,8 @@ namespace King {
         inline void                             Set(const UIntPoint2 & in) { i[0] = static_cast<int>(in.GetX()); i[1] = static_cast<int>(in.GetY()); }
         inline void                             Set(const DirectX::XMINT2 & point) { i[0] = point.x; i[1] = point.y; }
         inline void                             Set(const POINT & point) { i[0] = static_cast<int>(point.x); i[1] = static_cast<int>(point.y); }
+        // Tests
+        bool                                    IsZero() const { return (i[0] == 0 && i[1] == 0); }
         // Accessors
         int*                                    GetPtr() { return reinterpret_cast<int*>(this); }
         inline const int                        GetX() const { return (int)i[0]; }
@@ -542,6 +546,8 @@ namespace King {
         inline void constexpr                   Set(const unsigned long x, const unsigned long y, const unsigned long z) { i[0] = static_cast<int>(x); i[1] = static_cast<int>(y); i[2] = static_cast<int>(z); }
         inline void                             Set(const IntPoint3 & in) { *this = in; }
         inline void                             Set(const DirectX::XMINT3 & point) { i[0] = point.x; i[1] = point.y; i[2] = point.z; }
+        // Tests
+        bool                                    IsZero() const { return (i[0] == 0 && i[1] == 0 && i[2] == 0); }
         // Accessors
         int*                                    GetPtr() { return reinterpret_cast<int*>(this); }
         inline const int                        GetX() const { return (int)i[0]; }
@@ -1273,7 +1279,7 @@ namespace King {
         displayDevice.cb = sizeof(DISPLAY_DEVICE);
 
         if (EnumDisplayDevices(nullptr, 0, &displayDevice, 0))
-            std::cout << "Graphics Card Name (Windows): " << displayDevice.DeviceString << "\n";
+            std::cout << "Graphics Card Name (Windows): " << (void*)displayDevice.DeviceString << "\n";
         else
             std::cout << "Unable to retrieve graphics card information on Windows\n";
     }
