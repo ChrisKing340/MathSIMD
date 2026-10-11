@@ -709,7 +709,7 @@ namespace King {
         inline void __vectorcall                Set(float2 in) noexcept { v = in.v; }
         inline void __vectorcall                Set(DirectX::XMVECTOR in) noexcept { v = in; }
         inline void                             SetZero(void) { v = DirectX::XMVectorZero(); }
-        inline void                             SetZeroIfNear(const float epsilon = 0.00005f) { auto mask = DirectX::XMVectorLess(DirectX::XMVectorAbs(v), DirectX::XMVectorReplicate(epsilon)); DirectX::XMVectorSelect(v, DirectX::XMVectorZero(), mask); }
+        inline void                             SetZeroIfNear(const float epsilon = 0.00005f) { auto mask = DirectX::XMVectorLess(DirectX::XMVectorAbs(v), DirectX::XMVectorReplicate(epsilon)); v = DirectX::XMVectorSelect(v, DirectX::XMVectorZero(), mask); }
         void                                    SetX(const float x) { v = DirectX::XMVectorSetX(v, x); }
         void                                    SetY(const float y) { v = DirectX::XMVectorSetY(v, y); }
         inline virtual void                     Set(const float xy) { v = DirectX::XMVectorSet(xy, xy, 0.f, 0.f); }
