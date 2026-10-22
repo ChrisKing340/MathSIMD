@@ -185,6 +185,7 @@ using json = nlohmann::json;
 #include <sstream>
 #include <string>
 #include <cassert>
+#include <type_traits>
 #include <unordered_set>
 
 // Windows-only additions for SystemInfo
@@ -1161,6 +1162,17 @@ namespace King {
     {
         return v < min ? min : (v > max ? max : v);
     };
+    // Wraps integral coordinates into [0, period), including negative values.
+    template<typename Integer>
+    constexpr Integer Repeat(const Integer value, const Integer period) noexcept
+    {
+        static_assert(std::is_integral_v<Integer>, "Repeat requires an integral type");
+        if (period == 0)
+            return 0;
+        const Integer positivePeriod = period < 0 ? -period : period;
+        const Integer remainder = value % positivePeriod;
+        return remainder < 0 ? remainder + positivePeriod : remainder;
+    }
 #define MAKE_SIMD_FUNCS( Type ) \
     inline Type __vectorcall Sqrt( Type s ) { return Type(XMVectorSqrt(s)); } \
     inline Type __vectorcall Recip( Type s ) { return Type(XMVectorReciprocal(s)); } \
