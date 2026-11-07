@@ -743,6 +743,24 @@ namespace King {
         static float2 __vectorcall              CrossProduct(const float2 vec1In, const float2 vec2In) { return DirectX::XMVector2Cross(vec1In, vec2In); } // order does mater AxB = -(BxA)
         static float __vectorcall               SumComponents(const float2 vec1In) { return DirectX::XMVectorGetX(DirectX::XMVectorSum(vec1In)); }
         static float2 __vectorcall              MultiplyAdd(const float2 vec1MulIn, const float2 & vec2MulIn, const float2 & vec3AddIn) { return DirectX::XMVectorMultiplyAdd(vec1MulIn, vec2MulIn, vec3AddIn); }
+        // p00/p10 are the two X endpoints at Y=0; p01/p11 are the matching
+        // endpoints at Y=1.  xFactor/yFactor are normally in [0,1], but are
+        // deliberately not clamped so this can also be used for extrapolation.
+        static float2 __vectorcall              BilinearInterpolation(const float2& p00, const float2& p10,
+                                                const float2& p01, const float2& p11,
+                                                const float xFactor, const float yFactor)
+        {
+            const DirectX::XMVECTOR low = DirectX::XMVectorLerp(p00.GetVecConst(), p10.GetVecConst(), xFactor);
+            const DirectX::XMVECTOR high = DirectX::XMVectorLerp(p01.GetVecConst(), p11.GetVecConst(), xFactor);
+            return float2(DirectX::XMVectorLerp(low, high, yFactor));
+        }
+        // point0 has the implicit weight 1-weight1-weight2.
+        static float2 __vectorcall              BarycentricInterpolation(const float2& point0, const float2& point1,
+                                                const float2& point2, const float weight1, const float weight2)
+        {
+            return float2(DirectX::XMVectorBaryCentric(point0.GetVecConst(), point1.GetVecConst(),
+                point2.GetVecConst(), weight1, weight2));
+        }
         static float2                           Average(const std::vector<float2> & arrayIn) { assert(arrayIn.size()); float2 ave; for (const auto& each : arrayIn) ave += each; ave /= (float)arrayIn.size(); return ave; }
     };
     /******************************************************************************
@@ -871,6 +889,20 @@ namespace King {
         static float3 __vectorcall              CrossProduct(const float3 vec1In, const float3 vec2In) { return float3( DirectX::XMVector3Cross(vec1In, vec2In)); } // order does mater AxB = -(BxA) // note: this is LHS for DirectX, swap the terms for RHS
         static float __vectorcall               SumComponents(const float3 vec1In) { return DirectX::XMVectorGetX(DirectX::XMVectorSum(vec1In)); }
         static float3 __vectorcall              MultiplyAdd(const float3 vec1MulIn, const float3 vec2MulIn, const float3 vec3AddIn) { return DirectX::XMVectorMultiplyAdd(vec1MulIn, vec2MulIn, vec3AddIn); }
+        static float3 __vectorcall              BilinearInterpolation(const float3& p00, const float3& p10,
+                                                const float3& p01, const float3& p11,
+                                                const float xFactor, const float yFactor)
+        {
+            const DirectX::XMVECTOR low = DirectX::XMVectorLerp(p00.GetVecConst(), p10.GetVecConst(), xFactor);
+            const DirectX::XMVECTOR high = DirectX::XMVectorLerp(p01.GetVecConst(), p11.GetVecConst(), xFactor);
+            return float3(DirectX::XMVectorLerp(low, high, yFactor));
+        }
+        static float3 __vectorcall              BarycentricInterpolation(const float3& point0, const float3& point1,
+                                                const float3& point2, const float weight1, const float weight2)
+        {
+            return float3(DirectX::XMVectorBaryCentric(point0.GetVecConst(), point1.GetVecConst(),
+                point2.GetVecConst(), weight1, weight2));
+        }
         static float3                           Average(const std::vector<float3> & arrayIn) { assert(arrayIn.size()); float3 ave; for (const auto& each : arrayIn) ave += each; ave /= (float)arrayIn.size(); return ave; }
     };
     /******************************************************************************
